@@ -78,8 +78,8 @@ For the best experience with this extension:
 1.  See the "manualUpdate" property for information on preventing flicker during dynamic updates.
 2.  Add a CSS style to ensure the tooltip is sized correctly by overriding incompatible Ext JS sizing:
 
-    .jqstooltip {
-        box-sizing: content-box;
-        height: auto !important;
-        width: auto !important;
-    }
+>     .jqstooltip {
+>         box-sizing: content-box;
+>         height: auto !important;
+>         width: auto !important;
+>     }
