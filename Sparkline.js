@@ -3,37 +3,105 @@
  * @author Tim Vasil <tim@timvasil.com>
  * 
  * Column to render sparklines via jQuery's Sparkline library (http://omnipotent.net/jquery.sparkline).
+ *
+ * For the best experience with this extension:
  * 
- * MIT open source license
+ * 1) See the "manualUpdate" property below for information on preventing flicker during dynamic updates.
+ * 2) Add a CSS style to ensure the tooltip is sized correctly by overriding incompatible Ext JS sizing:
+ *    <pre>
+ *    .jqstooltip {
+ *       box-sizing: content-box;
+ *       height: auto !important;
+ *       width: auto !important;
+ *    }
+ *    </pre> 
+ * 
+ * Version 1.0.  MIT open source license.
  */
 Ext.define('Ext.ux.column.Sparkline', {
     extend: 'Ext.grid.column.Column',
     alias: ['widget.sparklinecolumn'],
 
     /**
-     * {@cfg} {Object} sparklineConfig 
-     * Optional Sparkline configuration object, as defined by the jQuery Sparkline API.  This object is
-     * passed into the $.sparkline method to draw the sparkline.
+     * {@cfg} {Object/Object[]} sparklineConfig 
      * 
-     * If you specify a sparklineConfig value, it's used as the config for *all* rows in the column, and the values
-     * provided by dataIndex are assumed to be an array of values (data points) for the chart.
+     * Sparkline configuration object, as defined by the jQuery Sparkline API to be used across
+     * all rows in this column.  This property is optional.
      * 
-     * If you don't specify a sparklineConfig value, dataIndex must be an array of arguments to the 
-     * $.sparkline function:  [values, config].
+     * The config object is passed into the $.sparkline method to draw the sparkline.  If you specify an array of objects,
+     * they're treated as composite configs and the charts are laid out on top of each other; you
+     * can use this to create a multi-series sparkline.  As noted in the Sparkline documentation,
+     * you may wish to set common min/max values across charts.  As a convenience, this implementation 
+     * will automatically set the "composite" property to true for you on the subsequent configs in the array.
+     * 
+     * The special "dataIndex" property of the sparklineConfig object indicates the property
+     * of the record to obtain the array of values for the chart.  If not specified, the dataIndex property
+     * of the column is sued.
+     * 
+     * If you'd prefer to configure each cell's sparkline differently, leave sparklineConfig
+     * undefined and set dataIndex to the property name in your model with values in this format:
+     * <pre>
+     * {
+     *     config: { sparklineConfig },
+     *     value: [ array of values for the chart ]
+     * }
+     * </pre> 
      */
 
     /**
-     * {@cfg} {Boolean} globalMaxDataIndex
+     * {@cfg} {Boolean} minDataIndex
+     * 
+     * Optional data index to fetch the min value to be used across all charts (the chartRangeMin property).
+     * 
+     * Indicates whether the "min" should be set identically across all charts in the column.  When true, the min is 
+     * determined dynamically by the smallest value of this property in the store.
+     */
+    
+    /**
+     * {@cfg} {Boolean} maxDataIndex
      * 
      * Optional data index to fetch the max value to be used across all charts (the chartRangeMax property).
      * 
      * Indicates whether the "max" should be set identically across all charts in the column.  When true, the max is 
-     * determined dynamically by the largest value in the store.
+     * determined dynamically by the largest value of this property in the store.
      */
-
+    
+    /**
+     * Set to true to prevent flicker when Ext JS clears out cell contents during rendering updates.
+     * This leaves the old sparkline in place until the async rendering of this class has a chance to overwrite it.
+     * 
+     * For this setting to work, you must apply a patch to Ext JS as follows:
+     * <pre>
+     *     Ext.override(Ext.grid.View, {
+     *         shouldUpdateCell: function(column, changedFieldNames) {
+     *             if (column.manualUpdate) {
+     *                 return false;
+     *             }
+     *             return this.callParent(arguments);
+     *         }
+     *     });
+     * </pre>
+     * 
+     * As an alternative, you can set "dataIndex" to a property that doesn't change across updates.
+     * The drawback to this approach is you can no longer rely on native grid sorting.
+     */
+    manualUpdate: true,
+    
+    /**
+     * Specifies the number of cells to render before relinquishing control back to the browser to process
+     * user activity and other events.  Note that this setting applies to cells, not individual sparklines,
+     * so if you have 5 composite sparklines in a cell that counts as just 1 rendering in the limit
+     * specified here. 
+     */
+    asyncRenderMaxCells: 10,
+    
     /** @Override */
     initComponent: function() {
         var me = this;
+
+        if (me.sparklineConfig && !Ext.isArray(me.sparklineConfig)) {
+            me.sparklineConfig = [me.sparklineConfig];
+        }
 
         // IDs of cells whose charts need rendering
         me.syncQueue = [];
@@ -68,25 +136,37 @@ Ext.define('Ext.ux.column.Sparkline', {
     },
 
     /** @Override */
-    defaultRenderer: function(value, metaData, record) {
+    defaultRenderer: function(value, metaData, record, rowIdx, colIdx, store, view) {
         var me = this;
-        
-        if (!value) {
-            return '';
+        var config = me.sparklineConfig;
+        var data;
+
+        if (me.sparklineConfig) {
+            data = [];
+            for ( var i = 0; i < config.length; i++) {
+                data.push({
+                    config: config[i],
+                    value: (config[i].dataIndex) ? record.get(config[i].dataIndex) : value
+                });
+            }
+        } else {
+            data = value;
         }
 
         // The only rendering we do synchronously is attaching an ID to the cell (column ID + record ID)
         var id = me.getId() + '-' + record.getId();
         metaData.tdAttr = 'id="' + id + '"';
 
-        // Asynchronously draw the sparkline.  We can't do it synchronously because: 
-        // 1) this render method's HTML is buffered, not appended to the DOM immediately, and 
-        // 2) it's not performance for more than 10 rows (especially in IE)
-        if (!me.syncQueueData[id]) {
-            me.syncQueue.push(id);
+        if (data) {
+            // Asynchronously draw the sparkline.  We can't do it synchronously because: 
+            // 1) this render method's HTML is buffered, not appended to the DOM immediately, and 
+            // 2) it's not performance for more than 10 rows (especially in IE)
+            if (!me.syncQueueData[id]) {
+                me.syncQueue.push(id);
+            }
+            me.syncQueueData[id] = data;
+            me.setSyncTimer();
         }
-        me.syncQueueData[id] = value;
-        me.setSyncTimer();
         return '';
     },
 
@@ -95,7 +175,7 @@ Ext.define('Ext.ux.column.Sparkline', {
         clearTimeout(me.syncTimer);
         this.callParent(arguments);
     },
-    
+
     /**
      * @private
      * 
@@ -123,27 +203,46 @@ Ext.define('Ext.ux.column.Sparkline', {
         var i = 0;
         delete me.syncTimer;
 
-        var max = (me.globalMaxDataIndex) ? me.up('grid').getStore().max(me.globalMaxDataIndex) : undefined;
+        var min = (me.minDataIndex) ? me.up('grid').getStore().max(me.minDataIndex) : undefined;
+        var max = (me.maxDataIndex) ? me.up('grid').getStore().max(me.maxDataIndex) : undefined;
 
         // Limit the amount of rendering at one time to ensure the browser (especially IE) remains responsive
-        for (i = 0; i < 10 && i < me.syncQueue.length; i++) {
+        for (i = 0; i < me.asyncRenderMaxCells && i < me.syncQueue.length; i++) {
             var id = me.syncQueue[i];
-            var value = me.syncQueueData[id];
-            var config = me.sparklineConfig;
+            var data = me.syncQueueData[id];
+            var el = $('#' + id);
             delete me.syncQueueData[id];
-            
-            if (!me.sparklineConfig) {
-                config = value[1];
-                value = value[0];
+
+            if (!el[0]) {
+                // DOM element no longer exists -- nothing to do
+                return;
             }
-            
-            if (me.globalMaxDataIndex) {
-                config.chartRangeMax = max;
+
+            if (!Ext.isArray(data)) {
+                data = [data];
             }
-            
-            $('#' + id).sparkline(value, config);
+
+            for ( var j = 0; j < data.length; j++) {
+                var config = data[j].config;
+                var value = data[j].value;
+
+                if (min !== undefined) {
+                    config.chartRangeMin = min;
+                }
+                if (max !== undefined) {
+                    config.chartRangeMax = max;
+                }
+                if (j > 0) {
+                    config.composite = true;
+                }
+                el.sparkline(value, config);
+            }
         }
+
+        // Remove the work we've done from the queue 
         me.syncQueue.splice(0, i);
+        
+        // Set the timer again if there's more work left to do
         if (me.syncQueue.length > 0) {
             me.setSyncTimer();
         }
