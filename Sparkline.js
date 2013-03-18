@@ -154,7 +154,7 @@ Ext.define('Ext.ux.column.Sparkline', {
         }
 
         // The only rendering we do synchronously is attaching an ID to the cell (column ID + record ID)
-        var id = me.getId() + '-' + record.getId();
+        var id = me.getId() + '-' + record.internalId;
         metaData.tdAttr = 'id="' + id + '"';
 
         if (data) {
@@ -215,7 +215,7 @@ Ext.define('Ext.ux.column.Sparkline', {
 
             if (!el[0]) {
                 // DOM element no longer exists -- nothing to do
-                return;
+                continue;
             }
 
             if (!Ext.isArray(data)) {
