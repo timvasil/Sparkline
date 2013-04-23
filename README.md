@@ -83,3 +83,13 @@ For the best experience with this extension:
 >         height: auto !important;
 >         width: auto !important;
 >     }
+
+3. For Ext JS 4.1.3 and higher (including 4.2), the override of Ext.grid.View.shouldUpdateCell has changed.
+
+  Replace this:
+
+>     shouldUpdateCell: function (column, changedFieldNames) {
+
+  with this:
+
+>     shouldUpdateCell: function (record, column, changedFieldNames) {
