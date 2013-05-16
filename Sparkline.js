@@ -172,7 +172,7 @@ Ext.define('Ext.ux.column.Sparkline', {
 
     /** @Override */
     destroy: function() {
-        clearTimeout(me.syncTimer);
+        clearTimeout(this.syncTimer);
         this.callParent(arguments);
     },
 
