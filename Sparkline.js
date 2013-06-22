@@ -155,7 +155,7 @@ Ext.define('Ext.ux.column.Sparkline', {
 
         // The only rendering we do synchronously is attaching an ID to the cell (column ID + record ID)
         var id = me.getId() + '-' + record.internalId;
-        metaData.tdAttr = 'id="' + id + '"';
+        metaData.tdAttr = 'id="' + Ext.util.Format.htmlEncode(id) + '"';
 
         if (data) {
             // Asynchronously draw the sparkline.  We can't do it synchronously because: 
@@ -210,10 +210,10 @@ Ext.define('Ext.ux.column.Sparkline', {
         for (i = 0; i < me.asyncRenderMaxCells && i < me.syncQueue.length; i++) {
             var id = me.syncQueue[i];
             var data = me.syncQueueData[id];
-            var el = $('#' + id);
+            var el = document.getElementById(id);
             delete me.syncQueueData[id];
 
-            if (!el[0]) {
+            if (!el) {
                 // DOM element no longer exists -- nothing to do
                 continue;
             }
@@ -235,7 +235,7 @@ Ext.define('Ext.ux.column.Sparkline', {
                 if (j > 0) {
                     config.composite = true;
                 }
-                el.sparkline(value, config);
+                $(el).sparkline(value, config);
             }
         }
 
